@@ -1,0 +1,24 @@
+name: Daily price fetch
+
+on:
+  schedule:
+    - cron: '0 8 * * 1-5'   # UTC 08:00 = 台北 16:00,週一到週五
+  workflow_dispatch:          # 手動觸發按鈕(測試用)
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install yfinance psycopg2-binary
+
+      - name: Run fetch_prices
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python fetch_prices.py
