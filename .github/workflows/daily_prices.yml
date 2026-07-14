@@ -2,8 +2,8 @@ name: Daily price fetch
 
 on:
   schedule:
-    - cron: '0 8 * * 1-5'   # UTC 08:00 = 台北 16:00,週一到週五
-  workflow_dispatch:          # 手動觸發按鈕(測試用)
+    - cron: '0 8 * * 1-5'
+  workflow_dispatch:
 
 jobs:
   fetch:
@@ -16,9 +16,16 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install yfinance psycopg2-binary
+        run: pip install yfinance psycopg2-binary requests
 
       - name: Run fetch_prices
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python fetch_prices.py
+
+      - name: Send Telegram summary
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python send_summary.py
