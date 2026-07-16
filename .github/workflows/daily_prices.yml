@@ -16,7 +16,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install yfinance psycopg2-binary requests
+        run: pip install yfinance psycopg2-binary requests python-dotenv
 
       - name: Run fetch_prices
         env:
