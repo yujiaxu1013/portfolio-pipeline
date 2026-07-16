@@ -1,0 +1,10 @@
+# 環境變數與金鑰
+.env
+*.env
+
+# Python 垃圾
+__pycache__/
+*.pyc
+
+# 測試用檔案
+test_yf.py
