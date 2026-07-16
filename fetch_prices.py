@@ -3,6 +3,9 @@ from datetime import datetime, timezone
 
 import yfinance as yf
 import psycopg2
+from dotenv import load_dotenv
+
+load_dotenv()
 from psycopg2.extras import execute_values
 
 DATABASE_URL = os.environ['DATABASE_URL']
