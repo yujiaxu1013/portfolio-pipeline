@@ -8,3 +8,5 @@ __pycache__/
 
 # 測試用檔案
 test_yf.py
+
+*.pbix
