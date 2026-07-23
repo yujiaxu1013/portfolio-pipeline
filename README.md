@@ -44,3 +44,85 @@ No real-time quotes. No trading signals. No price predictions. No order executio
 ---
 
 ## Architecture
+
+Every weekday after market close, GitHub Actions provisions a container, checks out this repo, injects credentials from repository secrets, and runs two scripts: one fetches and upserts prices, the other queries the valuation view and pushes a summary to Telegram. The container is destroyed afterwards. Nothing runs on my own machine — the pipeline continues whether my computer is on, off, or somewhere else entirely.
+
+**Automated path (daily):**
+GitHub Actions (cron, weekdays) → fetch_prices.py → yfinance → prices table → holdings_valuation view → send_summary.py → Telegram → my phone
+
+**Manual path (monthly):**
+add_transaction.py (interactive CLI) → transactions table
+
+**Analysis path (on demand):**
+Power BI Desktop → Neon PostgreSQL (direct connection)
+
+### Data Model
+
+![Schema diagram](schema-diagram.png)
+
+| Object | Type | Role |
+|---|---|---|
+| watchlist | table | Configuration hub. Everything the system tracks is a row here; both the price fetcher and the news module iterate over it. Adding a new holding requires no code change. |
+| transactions | table | Event log of every buy, sell, and dividend reinvestment. Manually entered, roughly once a month. The only data in the system that cannot be regenerated. |
+| prices | table | Daily OHLC and adjusted close for every active ticker. Composite primary key on ticker and date makes re-fetching idempotent. |
+| news | table | Article metadata plus LLM-generated labels. Populated by the news module (v1.1). |
+| pipeline_log | table | Execution record for every scheduled job: start, end, status, rows written, error message. |
+| current_holdings | view | Share count and net cost, derived from the transaction log. |
+| holdings_valuation | view | Current holdings joined to the latest close via a lateral join — market value and unrealized P&L, computed on read. |
+
+---
+
+## Design Decisions
+
+Notes on the tradeoffs behind the schema and the infrastructure.
+
+**Transactions are events, not state.** The obvious design is a holdings table with a share count you update each month. I record individual transactions instead and derive holdings from them. Updating a running total destroys history: you can never reconstruct when and at what price a position was accumulated, which makes the single most useful chart for a dollar-cost-averaging investor — contributed capital versus market value over time — impossible to draw. Recording events and deriving state also means adding sells, dividends, or a second ticker requires no schema change.
+
+**Derived values are computed on read, not stored.** Position value and unrealized P&L live in views, not columns. Storing them would mean every price update has to remember to recalculate them, and any missed update leaves the database quietly inconsistent. A view cannot go stale.
+
+**Cloud database over local.** Storage was never the constraint — this dataset is a few megabytes a year. The real reason is that a local database makes my laptop a dependency: the pipeline only runs when that specific machine is awake. With Neon plus GitHub Actions, the entire system is serverless, and my machine is reduced to one of several clients. Neon's scale-to-zero also means the compute cost of an idle database is nothing at all.
+
+**Denormalized news-to-ticker mapping.** An article mentioning two companies is stored as two rows with a uniqueness constraint on (url, ticker), rather than being normalized into a junction table. With a handful of tickers and low overlap, the duplication is negligible and every query stays a simple join. This is a decision worth revisiting if the watchlist grows substantially.
+
+**Scheduled off the hour.** The first version ran on the hour. Delivery drifted later and later — GitHub's free scheduler is a shared queue, and everyone writes their cron on the hour. Moving the schedule to an odd minute sidesteps the congestion. A small thing, but the kind you only learn by running something in production rather than reading about it.
+
+**Secrets never touch the source tree.** Credentials come from environment variables in every environment: a gitignored dotenv file locally, repository secrets in CI. Neither the code nor the working tree contains a working credential. An earlier version of this repo did leak one, through a .gitignore file that was created but never actually populated — the credential was rotated immediately, the file untracked, and the root cause fixed. The lesson kept: a protective mechanism that was created is not the same as one that was verified to work.
+
+---
+
+## Local Setup
+
+Requires Python 3.14 and a PostgreSQL database.
+
+    git clone https://github.com/yujiaxu1013/portfolio-pipeline.git
+    cd portfolio-pipeline
+    pip install -r requirements.txt
+
+Create a dotenv file in the project root containing a single line:
+
+    DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
+
+Apply the schema in sql/schema.sql, then run:
+
+    python fetch_prices.py      # fetch and upsert prices
+    python add_transaction.py   # interactive monthly entry
+
+For scheduled runs, DATABASE_URL, TELEGRAM_BOT_TOKEN, and TELEGRAM_CHAT_ID are configured as GitHub repository secrets.
+
+---
+
+## Roadmap
+
+- **v1.1 — News module.** RSS ingestion across index constituents and macro keywords, LLM labeling (type, impact level, direction, importance score), weekly digest. Explicitly framed as context, not signal.
+- **v1.2 — Market state monitoring.** Index drawdown, foreign institutional flows, FX levels, with alert thresholds stored as data rather than hardcoded. Alerts describe what has happened; they do not predict.
+- **v1.3 — Discipline audit.** Plan-versus-actual contribution tracking, and a thesis log for any discretionary position.
+
+---
+
+## Disclaimer
+
+Personal learning project. Nothing here is investment advice.
+
+---
+
+**Thomas** · [github.com/yujiaxu1013](https://github.com/yujiaxu1013)
