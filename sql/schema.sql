@@ -66,6 +66,7 @@ CREATE TABLE news (
     impact_level VARCHAR(30),
     direction    VARCHAR(10),
     summary      TEXT,
+    importance   SMALLINT,
     llm_model    VARCHAR(50),
     labeled_at   TIMESTAMPTZ,
     fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
