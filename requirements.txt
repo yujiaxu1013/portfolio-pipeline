@@ -2,3 +2,5 @@ yfinance
 psycopg2-binary
 requests
 python-dotenv
+feedparser
+google-genai
