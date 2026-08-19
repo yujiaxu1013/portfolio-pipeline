@@ -1,4 +1,5 @@
 import os
+import html
 from datetime import date
 
 import requests
@@ -10,9 +11,9 @@ CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
 
 
 def fetch_top_news(cur, limit=2):
-    """撈最近抓取日的 ≥4 分新聞,最多 limit 則(取最高分)"""
+    """撈最近抓取日的 ≥4 分新聞,最多 limit 則(含連結)"""
     cur.execute("""
-        SELECT importance, direction, summary
+        SELECT importance, direction, summary, url
         FROM news
         WHERE importance >= 4
           AND DATE(fetched_at) = (SELECT MAX(DATE(fetched_at)) FROM news)
@@ -47,8 +48,10 @@ def main():
         day_chg = (closes[0] - closes[1]) / closes[1] * 100 if len(closes) == 2 else 0
 
         pnl_pct = pnl / net_cost * 100
+        # 持倉的公司名做轉義(避免特殊符號干擾 HTML)
+        safe_name = html.escape(name)
         lines.append(
-            f"{name}:{close:.2f}({day_chg:+.2f}%)\n"
+            f"{safe_name}:{close:.2f}({day_chg:+.2f}%)\n"
             f"市值 {mv:,.0f} | 損益 {pnl:+,.0f}({pnl_pct:+.2f}%)"
         )
         total_mv += mv
@@ -57,17 +60,27 @@ def main():
     total_pnl = total_mv - total_cost
     lines.append(f"—\n總市值 {total_mv:,.0f} | 總損益 {total_pnl:+,.0f}({total_pnl/total_cost*100:+.2f}%)")
 
-    # 附上當天高分新聞(≥4 分,最多 2 則)
+    # 附上當天高分新聞(≥4 分,最多 2 則,含「詳全文」超連結)
     top_news = fetch_top_news(cur, limit=2)
     if top_news:
         lines.append("—\n📰 今日重點")
-        for importance, direction, summary in top_news:
-            lines.append(f"[{direction}★{importance}] {summary}")
+        for importance, direction, summary, url in top_news:
+            safe_summary = html.escape(summary)
+            if url:
+                safe_url = html.escape(url, quote=True)
+                lines.append(f'[{direction}★{importance}] {safe_summary} <a href="{safe_url}">詳全文</a>')
+            else:
+                lines.append(f"[{direction}★{importance}] {safe_summary}")
 
     msg = "\n".join(lines)
     resp = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": msg},
+        json={
+            "chat_id": CHAT_ID,
+            "text": msg,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        },
         timeout=30,
     )
     resp.raise_for_status()
