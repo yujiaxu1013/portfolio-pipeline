@@ -1,16 +1,15 @@
+"""本機預覽用:組出完整摘要文字並印在終端機,不發 Telegram、不需要 Telegram 金鑰。"""
 import os
 from datetime import date
 
-import requests
 import psycopg2
+from dotenv import load_dotenv
 
+load_dotenv()
 DATABASE_URL = os.environ['DATABASE_URL']
-BOT_TOKEN = os.environ['TELEGRAM_BOT_TOKEN']
-CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
 
 
 def fetch_top_news(cur, limit=2):
-    """撈最近抓取日的 ≥4 分新聞,最多 limit 則(取最高分)"""
     cur.execute("""
         SELECT importance, direction, summary
         FROM news
@@ -26,11 +25,11 @@ def main():
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
 
-    # 持倉估值(最新收盤)
     cur.execute("SELECT ticker, name, total_shares, net_cost, as_of, close, market_value, unrealized_pnl FROM holdings_valuation")
     holdings = cur.fetchall()
 
     if not holdings:
+        print("沒有持倉資料")
         cur.close(); conn.close()
         return
 
@@ -38,7 +37,6 @@ def main():
     total_mv, total_cost = 0, 0
 
     for (ticker, name, shares, net_cost, as_of, close, mv, pnl) in holdings:
-        # 當日漲跌:抓最近兩天收盤比較
         cur.execute("""
             SELECT close FROM prices WHERE ticker = %s
             ORDER BY price_date DESC LIMIT 2
@@ -57,7 +55,6 @@ def main():
     total_pnl = total_mv - total_cost
     lines.append(f"—\n總市值 {total_mv:,.0f} | 總損益 {total_pnl:+,.0f}({total_pnl/total_cost*100:+.2f}%)")
 
-    # 附上當天高分新聞(≥4 分,最多 2 則)
     top_news = fetch_top_news(cur, limit=2)
     if top_news:
         lines.append("—\n📰 今日重點")
@@ -65,13 +62,10 @@ def main():
             lines.append(f"[{direction}★{importance}] {summary}")
 
     msg = "\n".join(lines)
-    resp = requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": msg},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    print("摘要已發送")
+    print("=" * 40)
+    print(msg)
+    print("=" * 40)
+    print(f"\n(新聞則數:{len(top_news)})")
 
     cur.close(); conn.close()
 
