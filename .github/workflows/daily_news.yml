@@ -2,7 +2,7 @@ name: Daily news fetch and tag
 
 on:
   schedule:
-    - cron: '40 7 * * 1-5'
+    - cron: '0 1 * * 1-5'
   workflow_dispatch:
 
 jobs:
