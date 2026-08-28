@@ -1,4 +1,5 @@
 import os
+import math
 import html
 from datetime import date
 
@@ -8,6 +9,16 @@ import psycopg2
 DATABASE_URL = os.environ['DATABASE_URL']
 BOT_TOKEN = os.environ['TELEGRAM_BOT_TOKEN']
 CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
+
+
+def is_bad(x):
+    """判斷一個值是不是壞值(None 或 NaN)"""
+    if x is None:
+        return True
+    try:
+        return math.isnan(float(x))
+    except (TypeError, ValueError):
+        return False
 
 
 def fetch_top_news(cur, limit=2):
@@ -37,8 +48,14 @@ def main():
 
     lines = [f"📊 收盤摘要 {date.today():%m/%d}"]
     total_mv, total_cost = 0, 0
+    valid_count = 0   # 有幾檔成功列入
 
     for (ticker, name, shares, net_cost, as_of, close, mv, pnl) in holdings:
+        # 防呆:收盤價/市值/損益 任一是壞值就跳過這檔,不列入摘要
+        if is_bad(close) or is_bad(mv) or is_bad(pnl):
+            print(f"⚠ {name} 的估值含壞值(close/mv/pnl),跳過")
+            continue
+
         # 當日漲跌:抓最近兩天收盤比較
         cur.execute("""
             SELECT close FROM prices WHERE ticker = %s
@@ -48,7 +65,6 @@ def main():
         day_chg = (closes[0] - closes[1]) / closes[1] * 100 if len(closes) == 2 else 0
 
         pnl_pct = pnl / net_cost * 100
-        # 持倉的公司名做轉義(避免特殊符號干擾 HTML)
         safe_name = html.escape(name)
         lines.append(
             f"{safe_name}:{close:.2f}({day_chg:+.2f}%)\n"
@@ -56,6 +72,13 @@ def main():
         )
         total_mv += mv
         total_cost += net_cost
+        valid_count += 1
+
+    # 防呆:如果一檔有效的都沒有,不發摘要(避免發出空的/NaN 訊息)
+    if valid_count == 0:
+        print("⚠ 沒有任何有效持倉估值,今天不發摘要。")
+        cur.close(); conn.close()
+        return
 
     total_pnl = total_mv - total_cost
     lines.append(f"—\n總市值 {total_mv:,.0f} | 總損益 {total_pnl:+,.0f}({total_pnl/total_cost*100:+.2f}%)")

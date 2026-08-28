@@ -2,7 +2,7 @@ name: Daily price fetch
 
 on:
   schedule:
-    - cron: '17 7 * * 1-5'
+    - cron: '0 9 * * 1-5'
   workflow_dispatch:
 
 jobs:

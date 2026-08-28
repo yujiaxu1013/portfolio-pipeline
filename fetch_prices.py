@@ -1,4 +1,5 @@
 import os
+import math
 from datetime import datetime, timezone
 
 import yfinance as yf
@@ -31,18 +32,24 @@ def main():
 
         # 2. 逐檔抓價格(首跑抓三年;日常維運靠 period 參數改小)
         rows = []
+        skipped = 0
         for ticker in tickers:
             data = yf.download(ticker, period='3y', auto_adjust=False, progress=False)
             data = data.droplevel('Ticker', axis=1)   # 剝掉 MultiIndex 那層
             for date_idx, r in data.iterrows():
+                close = float(r['Close'])
+                # 防呆:收盤價是 NaN(通常是盤中抓、當日收盤價還沒產生)就跳過,不存壞值
+                if math.isnan(close):
+                    skipped += 1
+                    continue
                 rows.append((
                     ticker,
                     date_idx.date(),
                     float(r['Open']), float(r['High']), float(r['Low']),
-                    float(r['Close']), float(r['Adj Close']),
+                    close, float(r['Adj Close']),
                     int(r['Volume']),
                 ))
-        print(f"共 {len(rows)} 列待寫入")
+        print(f"共 {len(rows)} 列待寫入(跳過 {skipped} 筆 NaN)")
 
         # 3. UPSERT:主鍵重複就更新,不重複就插入
         execute_values(cur, """
