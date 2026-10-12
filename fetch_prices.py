@@ -32,15 +32,15 @@ def main():
 
         # 2. 逐檔抓價格(首跑抓三年;日常維運靠 period 參數改小)
         rows = []
-        skipped = 0
+        skipped = []   # 記錄被跳過的 (標的, 日期)
         for ticker in tickers:
             data = yf.download(ticker, period='3y', auto_adjust=False, progress=False)
             data = data.droplevel('Ticker', axis=1)   # 剝掉 MultiIndex 那層
             for date_idx, r in data.iterrows():
                 close = float(r['Close'])
-                # 防呆:收盤價是 NaN(通常是盤中抓、當日收盤價還沒產生)就跳過,不存壞值
+                # 防呆:收盤價是 NaN 就跳過,不存壞值
                 if math.isnan(close):
-                    skipped += 1
+                    skipped.append((ticker, date_idx.date()))
                     continue
                 rows.append((
                     ticker,
@@ -49,7 +49,9 @@ def main():
                     close, float(r['Adj Close']),
                     int(r['Volume']),
                 ))
-        print(f"共 {len(rows)} 列待寫入(跳過 {skipped} 筆 NaN)")
+        print(f"共 {len(rows)} 列待寫入(跳過 {len(skipped)} 筆 NaN)")
+        for tk, d in skipped:
+            print(f"    跳過:{tk} {d}")
 
         # 3. UPSERT:主鍵重複就更新,不重複就插入
         execute_values(cur, """
